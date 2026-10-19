@@ -941,8 +941,12 @@ private:
             if (current && pending_) {
                 if (cands_.empty()) fallbackPending(ic);
                 else {
+                    const int target = (pendingCandidateIndex_ >= 0 &&
+                                        pendingCandidateIndex_ < static_cast<int>(cands_.size()))
+                                       ? pendingCandidateIndex_
+                                       : selected_;
                     disarmPending();
-                    commitCandidate(ic, selected_);
+                    commitCandidate(ic, target);
                     drainQueued(ic);
                 }
             }
@@ -968,6 +972,8 @@ private:
         int time;
     };
     bool pending_ = false;
+    int pendingCandidateIndex_ = -1;
+    char pendingTriggerChar_ = ' ';
     std::deque<QueuedKey> queued_;
     std::unique_ptr<EventSourceTime> pendingTimer_;
     bool draining_ = false;
@@ -983,7 +989,7 @@ private:
 
     std::string pendingRaw() const {
         std::string raw = buf_;
-        if (pending_) raw += ' ';
+        if (pending_) raw += pendingTriggerChar_;
         for (const auto &key : queued_) {
             if (!key.release) raw += printableText(key.key);
         }
@@ -992,6 +998,8 @@ private:
 
     void disarmPending() {
         pending_ = false;
+        pendingCandidateIndex_ = -1;
+        pendingTriggerChar_ = ' ';
         pendingTimer_.reset();
     }
 
@@ -1010,8 +1018,10 @@ private:
         }
     }
 
-    void armPending(InputContext *ic) {
+    void armPending(InputContext *ic, int candidateIndex = -1, char triggerChar = ' ') {
         pending_ = true;
+        pendingCandidateIndex_ = candidateIndex;
+        pendingTriggerChar_ = triggerChar;
         auto ref = ic->watch();
         const auto epoch = epoch_;
         // Finite wait covers SKIP, hung engines, and exhausted restarts.
@@ -1455,6 +1465,40 @@ void WeTypeEngine::processKey(KeyEvent &event) {
                 }
             }
             event.filterAndAccept();
+        } else if (sym == FcitxKey_Left) {
+            cursorEditing_ = true;
+            const bool doublePin = (*config_.pinyinScheme == PinyinScheme::Flypy);
+            cursor_ = previousPinyinWord(buf_, cursor_, doublePin);
+            updateUI(*ic);
+            event.filterAndAccept();
+            return;
+        } else if (sym == FcitxKey_Right) {
+            cursorEditing_ = true;
+            const bool doublePin = (*config_.pinyinScheme == PinyinScheme::Flypy);
+            cursor_ = nextPinyinWord(buf_, cursor_, doublePin);
+            updateUI(*ic);
+            event.filterAndAccept();
+            return;
+        }
+    }
+
+    // Readline 快捷键 (Alt+B/F, Alt+Left/Right): 单词/音节级光标移动
+    if (!event.isRelease() && !buf_.empty() && *config_.readlineKeyBindings &&
+        (event.key().states().test(KeyState::Alt) || event.key().states().test(KeyState::Meta)) &&
+        !event.key().states().testAny(KeyStates{KeyState::Ctrl, KeyState::Super,
+                                                KeyState::Super2, KeyState::Hyper,
+                                                KeyState::Hyper2, KeyState::Mod5})) {
+        cursorEditing_ = true;
+        const bool doublePin = (*config_.pinyinScheme == PinyinScheme::Flypy);
+        if (sym == FcitxKey_b || sym == FcitxKey_B || sym == FcitxKey_Left) {
+            cursor_ = previousPinyinWord(buf_, cursor_, doublePin);
+            updateUI(*ic);
+            event.filterAndAccept();
+            return;
+        } else if (sym == FcitxKey_f || sym == FcitxKey_F || sym == FcitxKey_Right) {
+            cursor_ = nextPinyinWord(buf_, cursor_, doublePin);
+            updateUI(*ic);
+            event.filterAndAccept();
             return;
         }
     }
@@ -1614,15 +1658,36 @@ void WeTypeEngine::processKey(KeyEvent &event) {
                 handled = true;
             }
         }
-        // 数字选词(全局序号 = 页首 + 数字, 0 选第 10 个)
+        // 数字选词 (1-9, 0 以及小键盘数字 KP_1-KP_9, KP_0)
         else if ((sym >= FcitxKey_1 && sym <= FcitxKey_9) ||
-                 (sym == FcitxKey_0 && pageSize() >= 10)) {
-            const int ordinal = (sym == FcitxKey_0) ? 9
-                              : static_cast<int>(sym - FcitxKey_1);
-            const int idx = windowStart_ + ordinal;
-            if (ordinal < pageSize() && candidatesCurrent_ && !cands_.empty() &&
-                idx < (int)cands_.size()) {
-                commitCandidate(ic, idx);
+                 (sym >= FcitxKey_KP_1 && sym <= FcitxKey_KP_9) ||
+                 ((sym == FcitxKey_0 || sym == FcitxKey_KP_0) && pageSize() >= 10)) {
+            int ordinal = -1;
+            if (sym >= FcitxKey_1 && sym <= FcitxKey_9) {
+                ordinal = static_cast<int>(sym - FcitxKey_1);
+            } else if (sym == FcitxKey_0) {
+                ordinal = 9;
+            } else if (sym >= FcitxKey_KP_1 && sym <= FcitxKey_KP_9) {
+                ordinal = static_cast<int>(sym - FcitxKey_KP_1);
+            } else if (sym == FcitxKey_KP_0) {
+                ordinal = 9;
+            }
+
+            int idx = -1;
+            if (ordinal < pageSize()) {
+                idx = windowStart_ + ordinal;
+            }
+
+            if (candidatesCurrent_ && !cands_.empty()) {
+                if (idx >= 0 && idx < static_cast<int>(cands_.size())) {
+                    commitCandidate(ic, idx);
+                    handled = true;
+                }
+            } else if (!buf_.empty() && ordinal < pageSize()) {
+                // 候选还在获取中（如光标移动编辑后重建会话），挂起选词意图，候选到达后自动上屏
+                const int target = idx >= 0 ? idx : (windowStart_ + ordinal);
+                const char trig = (ordinal == 9) ? '0' : static_cast<char>('1' + ordinal);
+                armPending(ic, target, trig);
                 handled = true;
             }
         }
@@ -1630,7 +1695,7 @@ void WeTypeEngine::processKey(KeyEvent &event) {
         else if (sym == FcitxKey_space) {
             if (!buf_.empty()) {
                 if (candidatesCurrent_ && !cands_.empty()) commitCandidate(ic, selected_);   // 含部分选词与词库学习
-                else armPending(ic);
+                else armPending(ic, selected_, ' ');
                 handled = true;
             }
         }

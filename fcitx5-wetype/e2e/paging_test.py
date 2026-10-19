@@ -10,11 +10,12 @@ from gi.repository import GLib
 
 PS = int(sys.argv[1])
 LOG = os.environ["WETYPE_PAGETEST_LOG"]
-KEY = {"a": 97, "i": 105, "h": 104, "n": 110, "o": 111, "1": 49, "0": 48,
+KEY = {"a": 97, "i": 105, "h": 104, "n": 110, "o": 111, "1": 49, "2": 50, "3": 51, "0": 48,
+       "kp1": 0xFFB1, "kp2": 0xFFB2,
        "eq": 61, "minus": 45, "esc": 0xFF1B, "down": 0xFF54,
        "up": 0xFF52, "right": 0xFF53, "left": 0xFF51, "tab": 0xFF09,
        "home": 0xFF50, "end": 0xFF57, "delete": 0xFFFF, "backspace": 0xFF08,
-       "space": 32, "4": 52, "s": 115, "r": 114, "u": 117, "f": 102}
+       "space": 32, "4": 52, "s": 115, "r": 114, "u": 117, "f": 102, "b": 98}
 
 DBusGMainLoop(set_as_default=True)
 bus = dbus.SessionBus()
@@ -350,6 +351,70 @@ press("space")
 pump(0.8)
 check("Readline Ctrl+A 跳至行首并删除首字母",
       bool(commits),
+      "commit=%s" % (commits[-1] if commits else ""))
+
+# Readline Alt+B 向左移动词语: 输入 shrufa，按 Alt+B 两次跳到 'h' 后面，插入 'u' 变成 shurufa 并首选上屏
+press("esc")
+commits.clear()
+offset = os.path.getsize(LOG)
+for ch in "shrufa":
+    press(ch)
+press("b", state=8)  # Alt+B 跳到 fa 前 (光标在 4: shru|fa)
+press("b", state=8)  # Alt+B 跳到 ru 前 (光标在 2: sh|rufa)
+press("u")           # 插入 'u' -> 'shurufa'
+for _ in range(40):
+    pump(0.2)
+    if candidate_count(offset, 7) >= 1:
+        break
+press("space")
+pump(0.8)
+check("Readline Alt+B 向左移动词语并修改拼音 shrufa -> shurufa 并首选上屏",
+      commits and commits[-1] == "输入法",
+      "commit=%s" % (commits[-1] if commits else ""))
+
+# Readline Alt+B 行内修改后按数字键选词: shrufa -> Alt+B 两次 -> 插入 u -> 按数字 2 选第 2 个候选词
+press("esc")
+commits.clear()
+for ch in "shrufa":
+    press(ch)
+press("b", state=8)  # Alt+B 跳到 fa 前 (光标在 4: shru|fa)
+press("b", state=8)  # Alt+B 跳到 ru 前 (光标在 2: sh|rufa)
+press("u")           # 插入 'u' -> 'shurufa'
+before = len(indexes())
+press("2")           # 按数字 2 选第 2 候选，不应漏出数字 '2'
+pump(0.8)
+got = indexes()
+check("Readline Alt+B 行内修改后按数字2选中第2候选且不泄漏数字",
+      len(got) > before and got[-1] == 1 and commits and commits[-1] != "2",
+      "index=%s commit=%s" % (got[-1] if got else -1, commits[-1] if commits else ""))
+
+# 小键盘数字选词验证 (Keypad KP_2 选第 2 候选词)
+fresh()
+before = len(indexes())
+press("kp2")
+pump(0.8)
+got = indexes()
+check("小键盘KP_2选词成功命中index 1且不泄漏字符",
+      len(got) > before and got[-1] == 1,
+      "index=%s" % (got[-1] if got else -1))
+
+# Readline Alt+F 向右移动词语: 从行首 (Ctrl+A) 跳过 'ni' (Alt+F)，删掉 'h' -> 'niao' (鸟)
+press("esc")
+commits.clear()
+offset = os.path.getsize(LOG)
+for ch in "nihao":
+    press(ch)
+press("a", state=4)  # Ctrl+A 跳至行首
+press("f", state=8)  # Alt+F 跳过 'ni' (光标在 2: ni|hao)
+press("delete")      # 删掉 'h' -> 'niao'
+for _ in range(40):
+    pump(0.2)
+    if candidate_count(offset, 4) >= 1:
+        break
+press("space")
+pump(0.8)
+check("Readline Alt+F 向右移动词语并删除修改 nihao -> niao 并首选上屏",
+      commits and commits[-1] in ("鸟", "尿"),
       "commit=%s" % (commits[-1] if commits else ""))
 
 failed = [r for r in results if not r[1]]

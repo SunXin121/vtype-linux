@@ -23,7 +23,7 @@ FCITX_CONFIGURATION(WeTypeConfig,
     Option<bool> arrowKeysMoveCursor{
         this, "ArrowKeysMoveCursor", "方向键左右移动拼音光标", true};
     Option<bool> readlineKeyBindings{
-        this, "ReadlineKeyBindings", "启用 Readline 快捷键 (Ctrl+A/E/B/F/D/H/K/U)", true};
+        this, "ReadlineKeyBindings", "启用 Readline 快捷键 (Ctrl+A/E/B/F/D/H/K/U, Alt+B/F)", true};
     KeyListOption prevPage{
         this, "PrevPage", "上一页",
         {Key(FcitxKey_minus), Key(FcitxKey_KP_Subtract), Key(FcitxKey_Up), Key(FcitxKey_Page_Up)},
