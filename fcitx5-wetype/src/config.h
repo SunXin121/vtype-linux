@@ -33,6 +33,22 @@ FCITX_CONFIGURATION(WeTypeConfig,
         {Key(FcitxKey_equal), Key(FcitxKey_plus), Key(FcitxKey_KP_Add), Key(FcitxKey_Down), Key(FcitxKey_Page_Down)},
         KeyListConstrain(KeyConstrainFlag::AllowModifierLess)};
 
+    // 多行候选词设置
+    Option<bool> multiRowCandidates{
+        this, "MultiRowCandidates", "启用多行候选词显示", false};
+    Option<int, IntConstrain> candidateRows{
+        this, "CandidateRows", "候选行数 (2-10)", 5, IntConstrain(2, 10)};
+    Option<bool> multiRowShortcuts{
+        this, "MultiRowShortcuts", "启用候选行切换快捷键 (Up/Down, Ctrl+Y/E)", true};
+    KeyListOption prevRow{
+        this, "PrevRow", "上一候选行",
+        {Key(FcitxKey_Up), Key(FcitxKey_y, KeyState::Ctrl), Key(FcitxKey_Up, KeyState::Ctrl)},
+        KeyListConstrain(KeyConstrainFlag::AllowModifierLess)};
+    KeyListOption nextRow{
+        this, "NextRow", "下一候选行",
+        {Key(FcitxKey_Down), Key(FcitxKey_e, KeyState::Ctrl), Key(FcitxKey_Down, KeyState::Ctrl)},
+        KeyListConstrain(KeyConstrainFlag::AllowModifierLess)};
+
     // 模糊音设置 (19 组，与微信输入法官方一致)
     Option<bool> fuzzyZ_ZH{this, "Fuzzy_Z_ZH", "模糊音：z = zh", false};
     Option<bool> fuzzyC_CH{this, "Fuzzy_C_CH", "模糊音：c = ch", false};
