@@ -39,14 +39,14 @@ FCITX_CONFIGURATION(WeTypeConfig,
     Option<int, IntConstrain> candidateRows{
         this, "CandidateRows", "候选行数 (2-10)", 5, IntConstrain(2, 10)};
     Option<bool> multiRowShortcuts{
-        this, "MultiRowShortcuts", "启用候选行切换快捷键 (Up/Down, Ctrl+Y/E)", true};
+        this, "MultiRowShortcuts", "启用候选行切换快捷键 (Up/Down, Ctrl+P/N)", true};
     KeyListOption prevRow{
         this, "PrevRow", "上一候选行",
-        {Key(FcitxKey_Up), Key(FcitxKey_y, KeyState::Ctrl), Key(FcitxKey_Up, KeyState::Ctrl)},
+        {Key(FcitxKey_Up), Key(FcitxKey_p, KeyState::Ctrl), Key(FcitxKey_Up, KeyState::Ctrl)},
         KeyListConstrain(KeyConstrainFlag::AllowModifierLess)};
     KeyListOption nextRow{
         this, "NextRow", "下一候选行",
-        {Key(FcitxKey_Down), Key(FcitxKey_e, KeyState::Ctrl), Key(FcitxKey_Down, KeyState::Ctrl)},
+        {Key(FcitxKey_Down), Key(FcitxKey_n, KeyState::Ctrl), Key(FcitxKey_Down, KeyState::Ctrl)},
         KeyListConstrain(KeyConstrainFlag::AllowModifierLess)};
 
     // 模糊音设置 (19 组，与微信输入法官方一致)

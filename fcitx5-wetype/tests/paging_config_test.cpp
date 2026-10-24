@@ -75,12 +75,13 @@ int main() {
         };
 
         if (!matchKeyList(Key(FcitxKey_Down), nextRow)) throw std::runtime_error("matchKeyList failed for plain Down");
-        if (!matchKeyList(Key(FcitxKey_e, KeyState::Ctrl), nextRow)) throw std::runtime_error("matchKeyList failed for lower e");
-        if (!matchKeyList(Key(FcitxKey_E, KeyState::Ctrl), nextRow)) throw std::runtime_error("matchKeyList failed for upper E");
+        if (!matchKeyList(Key(FcitxKey_n, KeyState::Ctrl), nextRow)) throw std::runtime_error("matchKeyList failed for lower n");
+        if (!matchKeyList(Key(FcitxKey_N, KeyState::Ctrl), nextRow)) throw std::runtime_error("matchKeyList failed for upper N");
+        if (matchKeyList(Key(FcitxKey_e, KeyState::Ctrl), nextRow)) throw std::runtime_error("default nextRow must not take Readline Ctrl+E");
         if (!matchKeyList(Key(FcitxKey_Down, KeyState::Ctrl), nextRow)) throw std::runtime_error("matchKeyList failed for Ctrl+Down");
         if (!matchKeyList(Key(FcitxKey_Up), prevRow)) throw std::runtime_error("matchKeyList failed for plain Up");
-        if (!matchKeyList(Key(FcitxKey_y, KeyState::Ctrl), prevRow)) throw std::runtime_error("matchKeyList failed for lower y");
-        if (!matchKeyList(Key(FcitxKey_Y, KeyState::Ctrl), prevRow)) throw std::runtime_error("matchKeyList failed for upper Y");
+        if (!matchKeyList(Key(FcitxKey_p, KeyState::Ctrl), prevRow)) throw std::runtime_error("matchKeyList failed for lower p");
+        if (!matchKeyList(Key(FcitxKey_P, KeyState::Ctrl), prevRow)) throw std::runtime_error("matchKeyList failed for upper P");
         if (!matchKeyList(Key(FcitxKey_Up, KeyState::Ctrl), prevRow)) throw std::runtime_error("matchKeyList failed for Ctrl+Up");
 
         // 5. 多行候选自定义配置与行切换计算
@@ -88,15 +89,17 @@ int main() {
         multiRaw["MultiRowCandidates"].setValue("True");
         multiRaw["CandidateRows"].setValue("4");
         multiRaw["MultiRowShortcuts"].setValue("False");
-        multiRaw["PrevRow"]["0"] = "Control+p";
-        multiRaw["NextRow"]["0"] = "Control+n";
+        multiRaw["PrevRow"]["0"] = "Alt+k";
+        multiRaw["NextRow"]["0"] = "Alt+j";
         multiConf.load(multiRaw, true);
 
         if (*multiConf.multiRowCandidates != true) throw std::runtime_error("custom multiRowCandidates should be true");
         if (*multiConf.candidateRows != 4) throw std::runtime_error("custom candidateRows should be 4");
         if (*multiConf.multiRowShortcuts != false) throw std::runtime_error("custom multiRowShortcuts should be false");
-        if (!Key(FcitxKey_p, KeyState::Ctrl).checkKeyList(*multiConf.prevRow)) throw std::runtime_error("custom prevRow failed to match Ctrl+p");
-        if (!Key(FcitxKey_n, KeyState::Ctrl).checkKeyList(*multiConf.nextRow)) throw std::runtime_error("custom nextRow failed to match Ctrl+n");
+        if (!Key(FcitxKey_k, KeyState::Alt).checkKeyList(*multiConf.prevRow)) throw std::runtime_error("custom prevRow failed to match Alt+k");
+        if (Key(FcitxKey_p, KeyState::Ctrl).checkKeyList(*multiConf.prevRow)) throw std::runtime_error("custom prevRow still contains default Ctrl+p");
+        if (!Key(FcitxKey_j, KeyState::Alt).checkKeyList(*multiConf.nextRow)) throw std::runtime_error("custom nextRow failed to match Alt+j");
+        if (Key(FcitxKey_n, KeyState::Ctrl).checkKeyList(*multiConf.nextRow)) throw std::runtime_error("custom nextRow still contains default Ctrl+n");
 
         // 6. 二维矩阵行列计算逻辑验证 (35个候选词，4行，每行10个)
         const int totalCands = 35;

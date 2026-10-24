@@ -1414,7 +1414,8 @@ void WeTypeEngine::processKey(KeyEvent &event) {
         return false;
     };
 
-    // 多行候选行切换快捷键 (默认 Ctrl+Y/E, Ctrl+Up/Down, 可配置及开关)
+    // 多行候选行切换快捷键 (默认 Up/Down, Ctrl+P/N, Ctrl+Up/Down, 可配置及开关)。
+    // 默认键避开 Readline 的 Ctrl+A/E/B/F/D/H/K/U; 用户自定义的键优先于 Readline。
     if (!event.isRelease() && !buf_.empty() && candidatesCurrent_ && !cands_.empty() &&
         *config_.multiRowCandidates && *config_.multiRowShortcuts) {
         const int rows = std::clamp(*config_.candidateRows, 2, 10);
@@ -1590,6 +1591,7 @@ void WeTypeEngine::processKey(KeyEvent &event) {
                 }
             }
             event.filterAndAccept();
+            return;
         } else if (sym == FcitxKey_Left) {
             cursorEditing_ = true;
             const bool doublePin = (*config_.pinyinScheme == PinyinScheme::Flypy);
@@ -1613,14 +1615,15 @@ void WeTypeEngine::processKey(KeyEvent &event) {
         !event.key().states().testAny(KeyStates{KeyState::Ctrl, KeyState::Super,
                                                 KeyState::Super2, KeyState::Hyper,
                                                 KeyState::Hyper2, KeyState::Mod5})) {
-        cursorEditing_ = true;
         const bool doublePin = (*config_.pinyinScheme == PinyinScheme::Flypy);
         if (sym == FcitxKey_b || sym == FcitxKey_B || sym == FcitxKey_Left) {
+            cursorEditing_ = true;
             cursor_ = previousPinyinWord(buf_, cursor_, doublePin);
             updateUI(*ic);
             event.filterAndAccept();
             return;
         } else if (sym == FcitxKey_f || sym == FcitxKey_F || sym == FcitxKey_Right) {
+            cursorEditing_ = true;
             cursor_ = nextPinyinWord(buf_, cursor_, doublePin);
             updateUI(*ic);
             event.filterAndAccept();

@@ -16,7 +16,7 @@ KEY = {"a": 97, "i": 105, "h": 104, "n": 110, "o": 111, "1": 49, "2": 50, "3": 5
        "up": 0xFF52, "right": 0xFF53, "left": 0xFF51, "tab": 0xFF09,
        "home": 0xFF50, "end": 0xFF57, "delete": 0xFFFF, "backspace": 0xFF08,
        "space": 32, "4": 52, "s": 115, "r": 114, "u": 117, "f": 102, "b": 98,
-       "y": 121, "e": 101, "p": 112}
+       "y": 121, "e": 101, "p": 112, "j": 106}
 
 DBusGMainLoop(set_as_default=True)
 bus = dbus.SessionBus()
@@ -467,34 +467,47 @@ pump(0.8)
 got = indexes()
 check("多行候选方向键Down在末行翻页到下一页首行选词为index 30", len(got) > before and got[-1] == 30, "index=%s" % (got[-1] if got else -1))
 
-# 按 Ctrl+E 切换到第 1 行，按数字 1 选词为 index 10
+# 按 Ctrl+N 切换到第 1 行，按数字 1 选词为 index 10
 fresh()
+press("n", state=4)  # Ctrl+N
+before = len(indexes())
+press("1")
+pump(0.8)
+got = indexes()
+check("多行候选Ctrl+N移动到下一行并按1选词为index 10", len(got) > before and got[-1] == 10, "index=%s" % (got[-1] if got else -1))
+
+# 按 Ctrl+N 两次切换到第 2 行，按数字 1 选词为 index 20
+fresh()
+press("n", state=4)  # Ctrl+N -> row 1
+press("n", state=4)  # Ctrl+N -> row 2
+before = len(indexes())
+press("1")
+pump(0.8)
+got = indexes()
+check("多行候选Ctrl+N移动到第2行并按1选词为index 20", len(got) > before and got[-1] == 20, "index=%s" % (got[-1] if got else -1))
+
+# 按 Ctrl+P 从第 1 行返回第 0 行，按数字 1 选词为 index 0
+fresh()
+press("n", state=4)  # Ctrl+N -> row 1
+press("p", state=4)  # Ctrl+P -> row 0
+before = len(indexes())
+press("1")
+pump(0.8)
+got = indexes()
+check("多行候选Ctrl+P移动到上一行并按1选词为index 0", len(got) > before and got[-1] == 0, "index=%s" % (got[-1] if got else -1))
+
+# 多行模式下 Readline Ctrl+E 仍跳到拼音末尾: Ctrl+A -> Ctrl+E -> 退格应删掉末尾 o
+fresh()
+offset = os.path.getsize(LOG)
+press("a", state=4)  # Ctrl+A
 press("e", state=4)  # Ctrl+E
-before = len(indexes())
-press("1")
-pump(0.8)
-got = indexes()
-check("多行候选Ctrl+E移动到下一行并按1选词为index 10", len(got) > before and got[-1] == 10, "index=%s" % (got[-1] if got else -1))
-
-# 按 Ctrl+E 两次切换到第 2 行，按数字 1 选词为 index 20
-fresh()
-press("e", state=4)  # Ctrl+E -> row 1
-press("e", state=4)  # Ctrl+E -> row 2
-before = len(indexes())
-press("1")
-pump(0.8)
-got = indexes()
-check("多行候选Ctrl+E移动到第2行并按1选词为index 20", len(got) > before and got[-1] == 20, "index=%s" % (got[-1] if got else -1))
-
-# 按 Ctrl+Y 从第 1 行返回第 0 行，按数字 1 选词为 index 0
-fresh()
-press("e", state=4)  # Ctrl+E -> row 1
-press("y", state=4)  # Ctrl+Y -> row 0
-before = len(indexes())
-press("1")
-pump(0.8)
-got = indexes()
-check("多行候选Ctrl+Y移动到上一行并按1选词为index 0", len(got) > before and got[-1] == 0, "index=%s" % (got[-1] if got else -1))
+press("backspace")
+for _ in range(40):
+    pump(0.2)
+    if candidate_count(offset, 4) >= 1:
+        break
+check("多行候选模式下Readline Ctrl+E仍跳至行尾", candidate_count(offset, 4) >= 1,
+      "buffer_len=4 candidates=%d" % candidate_count(offset, 4))
 
 # Tab 键在多行模式下切换候选行并用空格上屏
 fresh()
@@ -505,19 +518,19 @@ pump(0.8)
 got = indexes()
 check("多行候选Tab切换激活行后Space上屏为index 10", len(got) > before and got[-1] == 10, "index=%s" % (got[-1] if got else -1))
 
-# 自定义多行候选快捷键 (PrevRow=Control+p, NextRow=Control+n)
+# 自定义多行候选快捷键 (PrevRow=Alt+k, NextRow=Alt+j)
 with open(wetype_conf, "w") as f:
-    f.write("MultiRowCandidates=True\nCandidateRows=3\nMultiRowShortcuts=True\n\n[PrevRow]\n0=Control+p\n\n[NextRow]\n0=Control+n\n")
+    f.write("MultiRowCandidates=True\nCandidateRows=3\nMultiRowShortcuts=True\n\n[PrevRow]\n0=Alt+k\n\n[NextRow]\n0=Alt+j\n")
 CTL.ReloadAddonConfig("wetype")
 pump(0.3)
 
 fresh()
-press("n", state=4)  # Ctrl+N -> row 1
+press("j", state=8)  # Alt+J -> row 1
 before = len(indexes())
 press("1")
 pump(0.8)
 got = indexes()
-check("多行候选自定义Ctrl+N切换至下一行选词为index 10", len(got) > before and got[-1] == 10, "index=%s" % (got[-1] if got else -1))
+check("多行候选自定义Alt+J切换至下一行选词为index 10", len(got) > before and got[-1] == 10, "index=%s" % (got[-1] if got else -1))
 
 # 清理配置
 if os.path.exists(wetype_conf):
