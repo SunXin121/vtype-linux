@@ -25,7 +25,7 @@ uname -m; . /etc/os-release; echo "$PRETTY_NAME"; echo "$XDG_SESSION_TYPE $XDG_C
 fcitx5 --version; pgrep -a fcitx5; fcitx5-remote
 ```
 
-- 维护者日常用 x86_64 + Ubuntu 22.04 + KDE/X11；社区另反馈过 Ubuntu 26.04 GNOME/Wayland、Kubuntu 26.04、NixOS Niri/Wayland 可用，见 README 的“环境”表。不在表里的组合也可以装，但要告诉用户这是没验证过的，装完请他反馈。
+- 维护者日常用 x86_64 + Ubuntu 22.04 + KDE/X11；社区另反馈过 Ubuntu 26.04 GNOME/Wayland、Kubuntu 26.04、NixOS Niri/Wayland、Arch Linux Niri/Wayland 可用，见 README 的“环境”表。不在表里的组合也可以装，但要告诉用户这是没验证过的，装完请他反馈。
 - 没装 Fcitx5，或者 Fcitx5 不是当前输入法框架时（`fcitx5-remote` 报错或 `pgrep` 没结果）：Ubuntu 上是 `sudo apt install fcitx5 fcitx5-config-qt`，再 `im-config -n fcitx5`，需要**重新登录**。这会替换用户现有的输入法框架（如 ibus），务必先征得同意。
 
 ### 2. 安装依赖、编译

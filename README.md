@@ -27,7 +27,6 @@ agent 会检查系统环境、编译、安装、启用输入法并跑一遍自�
 | **官方引擎** | 整句、乱序/键邻纠错、emoji 和颜文字，和安卓版同一个引擎 |
 | **小鹤双拼** | 在 Fcitx5 配置中切换全拼/小鹤，`nihc` → 你好，`vsgo` → 中国 |
 | **拼音显示位置** | 可在 Fcitx5 配置中选择把拼音显示在应用输入框里，候选窗停在本轮拼音起始位置；默认拼音显示在候选窗 |
-
 | **模糊音** | 支持全部 19 组官方模糊音（平翘舌 z/c/s、鼻边音 n/l、前后鼻音等），可在 Fcitx5 配置中独立勾选 |
 | **云候选与热词** | 网络热词、新梗由官方云端补充（如 `zheng yi zs` → 正义之手），断网自动退回本地 |
 | **二级词库** | 下载官方更新的公共词库，补上 APK 发布之后出现的新词 |
@@ -49,6 +48,7 @@ agent 会检查系统环境、编译、安装、启用输入法并跑一遍自�
 | x86_64 + Ubuntu 26.04 + GNOME / Wayland | 社区反馈全部功能可用，剪贴板走 XWayland（[#11](https://github.com/zhl-HFUT/vtype-linux/issues/11)） |
 | Kubuntu 26.04 | 社区反馈安装成功、使用正常（[#9](https://github.com/zhl-HFUT/vtype-linux/issues/9)） |
 | x86_64 + NixOS + Niri / Wayland | 社区反馈用 Nix 包安装，本地输入和云候选可用（[#4](https://github.com/zhl-HFUT/vtype-linux/pull/4)、[#5](https://github.com/zhl-HFUT/vtype-linux/issues/5)） |
+| x86_64 + Arch Linux + Niri / Wayland | 社区反馈用 AppImage 安装，本地输入、云候选、词库同步、常用语和 Wayland 剪贴板可用（[#21](https://github.com/zhl-HFUT/vtype-linux/issues/21)） |
 | Ubuntu 24.04、其他发行版 | CI 能编译，还没有实机反馈 |
 | ARM64 | 上游支持原生运行，本项目的云功能没验证 |
 
