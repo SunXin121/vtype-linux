@@ -7,13 +7,43 @@ import subprocess
 import sys
 import tempfile
 import time
+import zlib
+import struct
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'cloud'))
 sys.path.insert(0, str(ROOT / 'tests'))
-from 系统剪贴板 import DesktopClipboard
+from 系统剪贴板 import GTK_READ, DesktopClipboard
 from 剪贴板同步 import Synchronizer
 from test_clipboard_sync import MemoryGroup
+from 剪贴板协议 import ClipboardImage, image_type
+
+PNG = bytes.fromhex('89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de'
+                    '0000000c4944415408d763f8cfc000000301010018dd8db00000000049454e44ae426082')
+
+
+def oriented_jpeg(width=4, height=2):
+    """带 EXIF 方向 6（显示时右转 90°）的 JPEG。"""
+    import gi
+    gi.require_version('GdkPixbuf', '2.0')
+    from gi.repository import GdkPixbuf
+    image = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, width, height)
+    image.fill(0x1e90ffff)
+    data = image.save_to_bufferv('jpeg', [], [])[1]
+    tiff = b'MM\x00\x2a\x00\x00\x00\x08\x00\x01' + b'\x01\x12\x00\x03\x00\x00\x00\x01\x00\x06\x00\x00' + b'\x00' * 4
+    exif = b'Exif\x00\x00' + tiff
+    return data[:2] + b'\xff\xe1' + struct.pack('>H', len(exif) + 2) + exif + data[2:]
+
+
+def large_png(size=3 * 1024 * 1024):
+    """不依赖 Pillow 生成超过 xclip 读取上限的合法 PNG（随机像素，存储不压缩）。"""
+    width = 1024
+    rows = size // (width * 3) + 1
+    raw = b''.join(b'\0' + os.urandom(width * 3) for _ in range(rows))
+    def chunk(kind, data):
+        return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data))
+    return (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, rows, 8, 2, 0, 0, 0))
+            + chunk(b'IDAT', zlib.compress(raw, 0)) + chunk(b'IEND', b''))
 
 
 def settle(check):
@@ -88,7 +118,62 @@ def main():
             settle(lambda: desktop.read() is None)
             sync.step()
             assert len(group.sent) == 1
-            print(args.backend + ' 隔离桌面：双向 UTF-8、换行、首启基线、防回传、文件过滤均通过；官方网络请求为 0。')
+            # 图片默认不读取；单独启用后双向读写 PNG，且不回传。
+            image_command = (['xclip', '-selection', 'clipboard', '-in', '-target', 'image/png'] if args.backend == 'x11'
+                             else ['wl-copy', '--type', 'image/png'])
+            subprocess.run(image_command, input=PNG, env=env, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            settle(lambda: DesktopClipboard(args.backend, env, images=True).read() == ClipboardImage(PNG, 'image/png'))
+            assert desktop.read() is None
+            sync.step()
+            assert len(group.sent) == 1
+            pictures = DesktopClipboard(args.backend, env, images=True)
+            image_group = MemoryGroup()
+            image_sync = Synchronizer(pictures, image_group, Path(directory) / 'image-cursor.json', images=True)
+            image_sync.step()
+            assert not image_group.sent
+            pictures.write('Linux 文字', expected=pictures.read())
+            image_sync.step()
+            pictures.write(ClipboardImage(PNG, 'image/png'), expected=pictures.read())
+            image_sync.step()
+            assert image_group.sent[-1][0] == ClipboardImage(PNG, 'image/png'), image_group.sent
+            jpeg = ClipboardImage(b'\xff\xd8\xff\xe0' + b'synthetic-jpeg' + b'\xff\xd9', 'image/jpeg')
+            image_group.images[9] = jpeg
+            image_group.receive('', version=9, kind=6)
+            sent = len(image_group.sent)
+            image_sync.step()
+            image_sync.step()
+            read_jpeg = ['xclip', '-selection', 'clipboard', '-out', '-target', 'image/jpeg'] if args.backend == 'x11' else ['wl-paste', '--type', 'image/jpeg']
+            assert subprocess.check_output(read_jpeg, env=env) == jpeg.data
+            assert len(image_group.sent) == sent
+            if args.backend == 'x11':
+                # X11 上收到的 JPEG 同时以 PNG 提供，并按 EXIF 方向（右转 90°）摆正；不回传。
+                photo = ClipboardImage(oriented_jpeg(), 'image/jpeg')
+                image_group.images[10] = photo
+                image_group.receive('', version=10, kind=6)
+                image_sync.step()
+                image_sync.step()
+                assert subprocess.check_output(read_jpeg, env=env) == photo.data
+                png = subprocess.check_output(['xclip', '-selection', 'clipboard', '-out', '-target', 'image/png'], env=env)
+                assert image_type(png) == 'image/png' and struct.unpack('>II', png[16:24]) == (2, 4), png[:32]
+                image_sync.step()
+                assert len(image_group.sent) == sent
+                # 长边超过 2560 的照片转 PNG 时等比缩小，JPEG 仍是原图。
+                photo = ClipboardImage(oriented_jpeg(1000, 3000), 'image/jpeg')
+                image_group.images[11] = photo
+                image_group.receive('', version=11, kind=6)
+                image_sync.step()
+                image_sync.step()
+                assert subprocess.check_output(read_jpeg, env=env) == photo.data
+                png = subprocess.check_output([sys.executable, '-c', GTK_READ, 'image/png'], env=env)
+                assert image_type(png) == 'image/png' and struct.unpack('>II', png[16:24]) == (2560, 853), png[:32]
+                assert len(image_group.sent) == sent
+            # 超过 1 MiB 的图片：写入后不回读，提供方不退出；其他进程重新读取得到完整图片。
+            big = ClipboardImage(large_png(), 'image/png')
+            pictures.write(big, expected=pictures.read())
+            for _ in range(2):
+                assert DesktopClipboard(args.backend, env, images=True).read() == big
+            print(args.backend + ' 隔离桌面：双向 UTF-8、换行、首启基线、防回传、文件过滤、图片开关、双向 PNG/JPEG 与 %d 字节大图均通过；官方网络请求为 0。'
+                  % len(big.data))
         finally:
             server.terminate()
             try:
