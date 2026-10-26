@@ -20,6 +20,15 @@ agent 会检查系统环境、编译、安装、启用输入法并跑一遍自�
 
 想自己动手，看 [安装与使用](docs/安装与使用.md)。Nix/NixOS 用户见 [Nix 安装](docs/NixOS.md)。
 
+已经装过、想更新到[最新版本](https://github.com/zhl-HFUT/vtype-linux/releases)，把这段话发给 agent：
+
+```text
+帮我把 VType Linux 更新到最新版本：https://github.com/zhl-HFUT/vtype-linux
+按仓库根目录 AGENTS.md 的“更新已有安装”操作。要退出或重启 Fcitx5 的时候，先停下来问我。
+```
+
+更新会保留个人词库、关联身份和设置。
+
 ## 能做什么
 
 | | 说明 |

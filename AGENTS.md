@@ -104,6 +104,23 @@ python3 ~/.local/lib/wetype-ime/arm64/wetype-cloud.py status
 
 启用后，用户之后复制的所有纯文本都会发给官方服务器，务必先说明并征得同意。需要 `xclip`（X11）或 `wl-clipboard`（Wayland），在图形桌面的终端执行 `wetype-cloud.py clipboard enable`，用 `clipboard status` 检查。图片同步要再加 `--images`，之后复制的截图等图片都会上传，须另行征得同意；X11 / XWayland 上还需要 `python3-gi gir1.2-gtk-3.0`。详见 [docs/剪贴板互通.md](docs/剪贴板互通.md)。
 
+### 更新已有安装
+
+已装过的用户更新到新版本时按这个顺序做，个人词库、关联身份和设置都会保留（Nix 安装按 [docs/NixOS.md](docs/NixOS.md) 更新）：
+
+```sh
+cd vtype-linux && git pull
+export ANDROID_NDK_HOME="$PWD/.deps/tools/android-ndk-r27c"
+bash scripts/e2_img.sh
+```
+
+1. 编译成功后，告诉用户接下来要退出 Fcitx5（会打断正在输入的内容），征得同意再执行 `fcitx5-remote -e`。
+2. `./WeTypeIME-Engine-x86_64.AppImage install --user`，再 `fcitx5 -d` 启动。
+3. 启用了剪贴板互通的，执行 `systemctl --user restart wetype-clipboard.service`。
+4. 跑第 5 步的自检，请用户试打。
+
+新版本新增的可选功能（如剪贴板图片）不会自动开启，先向用户说明，征得同意再启用。
+
 ## 必须遵守
 
 - `~/.local/state/wetype-ime/account` 是用户的设备身份，相当于登录凭据。不要打印其中内容，不要复制到仓库、issue、网盘或其他机器。
