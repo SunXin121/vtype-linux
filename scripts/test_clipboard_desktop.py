@@ -7,6 +7,8 @@ import subprocess
 import sys
 import tempfile
 import time
+import zlib
+import struct
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'cloud'))
@@ -14,6 +16,21 @@ sys.path.insert(0, str(ROOT / 'tests'))
 from 系统剪贴板 import DesktopClipboard
 from 剪贴板同步 import Synchronizer
 from test_clipboard_sync import MemoryGroup
+from 剪贴板协议 import ClipboardImage
+
+PNG = bytes.fromhex('89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de'
+                    '0000000c4944415408d763f8cfc000000301010018dd8db00000000049454e44ae426082')
+
+
+def large_png(size=3 * 1024 * 1024):
+    """不依赖 Pillow 生成超过 xclip 读取上限的合法 PNG（随机像素，存储不压缩）。"""
+    width = 1024
+    rows = size // (width * 3) + 1
+    raw = b''.join(b'\0' + os.urandom(width * 3) for _ in range(rows))
+    def chunk(kind, data):
+        return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data))
+    return (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, rows, 8, 2, 0, 0, 0))
+            + chunk(b'IDAT', zlib.compress(raw, 0)) + chunk(b'IEND', b''))
 
 
 def settle(check):
@@ -88,7 +105,40 @@ def main():
             settle(lambda: desktop.read() is None)
             sync.step()
             assert len(group.sent) == 1
-            print(args.backend + ' 隔离桌面：双向 UTF-8、换行、首启基线、防回传、文件过滤均通过；官方网络请求为 0。')
+            # 图片默认不读取；单独启用后双向读写 PNG，且不回传。
+            image_command = (['xclip', '-selection', 'clipboard', '-in', '-target', 'image/png'] if args.backend == 'x11'
+                             else ['wl-copy', '--type', 'image/png'])
+            subprocess.run(image_command, input=PNG, env=env, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            settle(lambda: DesktopClipboard(args.backend, env, images=True).read() == ClipboardImage(PNG, 'image/png'))
+            assert desktop.read() is None
+            sync.step()
+            assert len(group.sent) == 1
+            pictures = DesktopClipboard(args.backend, env, images=True)
+            image_group = MemoryGroup()
+            image_sync = Synchronizer(pictures, image_group, Path(directory) / 'image-cursor.json', images=True)
+            image_sync.step()
+            assert not image_group.sent
+            pictures.write('Linux 文字', expected=pictures.read())
+            image_sync.step()
+            pictures.write(ClipboardImage(PNG, 'image/png'), expected=pictures.read())
+            image_sync.step()
+            assert image_group.sent[-1][0] == ClipboardImage(PNG, 'image/png'), image_group.sent
+            jpeg = ClipboardImage(b'\xff\xd8\xff\xe0' + b'synthetic-jpeg' + b'\xff\xd9', 'image/jpeg')
+            image_group.images[9] = jpeg
+            image_group.receive('', version=9, kind=6)
+            sent = len(image_group.sent)
+            image_sync.step()
+            image_sync.step()
+            read_jpeg = ['xclip', '-selection', 'clipboard', '-out', '-target', 'image/jpeg'] if args.backend == 'x11' else ['wl-paste', '--type', 'image/jpeg']
+            assert subprocess.check_output(read_jpeg, env=env) == jpeg.data
+            assert len(image_group.sent) == sent
+            # 超过 1 MiB 的图片：写入后不回读，提供方不退出；其他进程重新读取得到完整图片。
+            big = ClipboardImage(large_png(), 'image/png')
+            pictures.write(big, expected=pictures.read())
+            for _ in range(2):
+                assert DesktopClipboard(args.backend, env, images=True).read() == big
+            print(args.backend + ' 隔离桌面：双向 UTF-8、换行、首启基线、防回传、文件过滤、图片开关、双向 PNG/JPEG 与 %d 字节大图均通过；官方网络请求为 0。'
+                  % len(big.data))
         finally:
             server.terminate()
             try:

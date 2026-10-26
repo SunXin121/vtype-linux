@@ -102,7 +102,7 @@ python3 ~/.local/lib/wetype-ime/arm64/wetype-cloud.py status
 
 ### 7. 剪贴板互通（可选，需要用户同意）
 
-启用后，用户之后复制的所有纯文本都会发给官方服务器，务必先说明并征得同意。需要 `xclip`（X11）或 `wl-clipboard`（Wayland），在图形桌面的终端执行 `wetype-cloud.py clipboard enable`，用 `clipboard status` 检查。详见 [docs/剪贴板互通.md](docs/剪贴板互通.md)。
+启用后，用户之后复制的所有纯文本都会发给官方服务器，务必先说明并征得同意。需要 `xclip`（X11）或 `wl-clipboard`（Wayland），在图形桌面的终端执行 `wetype-cloud.py clipboard enable`，用 `clipboard status` 检查。图片同步要再加 `--images`，之后复制的截图等图片都会上传，须另行征得同意；X11 / XWayland 上还需要 `python3-gi gir1.2-gtk-3.0`。详见 [docs/剪贴板互通.md](docs/剪贴板互通.md)。
 
 ## 必须遵守
 
@@ -144,7 +144,7 @@ cmake -S fcitx5-wetype -B build && cmake --build build && ctest --test-dir build
 python3 -m unittest discover -s tests -p 'test_*.py'
 python3 tests/test_snapshot_transport.py
 python3 scripts/check-public-source.py
-python3 scripts/test_clipboard_desktop.py --backend x11   # 需要 Xvfb、xclip
+python3 scripts/test_clipboard_desktop.py --backend x11   # 需要 Xvfb、xclip、python3-gi 和 GTK 3
 ```
 
 插件改动还要在真实环境验证：重新编译后把 `build/libfcitx5-wetype.so` 装到 `~/.local/lib/fcitx5/`（先备份），重启 Fcitx5 试打。`fcitx5-wetype/e2e/` 下有基于 Xvfb 的界面测试，可以在不影响用户桌面的情况下验证按键行为。

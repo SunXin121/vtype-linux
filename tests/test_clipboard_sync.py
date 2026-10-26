@@ -6,7 +6,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'cloud'))
 from 剪贴板同步 import Synchronizer
-from 剪贴板协议 import ClipboardMessage, GroupSnapshot, SendUnknown, NotSent
+from 剪贴板协议 import ClipboardImage, ClipboardMessage, GroupSnapshot, SendUnknown, NotSent
+
+PNG = ClipboardImage(b"\x89PNG\r\n\x1a\n" + b"synthetic" + b"IEND\xaeB`\x82", "image/png")
 
 
 class MemoryClipboard:
@@ -32,6 +34,8 @@ class MemoryGroup:
         self.snapshot = GroupSnapshot(20, 10, frozenset({10, 11}), None, 1000000)
         self.sent = []
         self.cos = {}
+        self.images = {}
+        self.downloads = 0
 
     def fetch(self):
         return self.snapshot
@@ -48,9 +52,14 @@ class MemoryGroup:
             return value
         return message.text
 
+    def content(self, message):
+        self.downloads += 1
+        return self.images.get(message.version)
+
     def receive(self, text='手机复制的文本', version=5, source=11, expires=2000, kind=1, trace='remote', url=None):
+        image = {'url': 'https://bucket.myqcloud.com/i'} if kind == 6 else None
         self.snapshot = GroupSnapshot(20, 10, frozenset({10, 11}),
-                                      ClipboardMessage(version, source, expires, kind, text, trace, url), 1000000)
+                                      ClipboardMessage(version, source, expires, kind, text, trace, url, image), 1000000)
 
 
 class ClipboardSyncTest(unittest.TestCase):
@@ -202,6 +211,65 @@ class ClipboardSyncTest(unittest.TestCase):
         self.sync.step()
         self.assertEqual(self.group.sent, [])
         self.assertEqual(self.sync.status()['received'], 1)
+
+
+class ClipboardImageSyncTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.state = Path(self.temp.name) / 'clipboard-state.json'
+        self.desktop = MemoryClipboard()
+        self.group = MemoryGroup()
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def test_images_are_ignored_unless_enabled(self):
+        sync = Synchronizer(self.desktop, self.group, self.state)
+        self.group.images[5] = PNG
+        self.group.receive('', kind=6)
+        sync.step()
+        self.assertEqual((self.desktop.writes, self.group.downloads), ([], 0))
+
+    def test_remote_image_is_written_once_and_not_echoed(self):
+        sync = Synchronizer(self.desktop, self.group, self.state, images=True)
+        self.group.images[5] = PNG
+        self.group.receive('', kind=6)
+        sync.step()
+        sync.step()
+        self.assertEqual(self.desktop.writes, [PNG])
+        self.assertEqual((self.group.sent, self.group.downloads, sync.status()['received']), ([], 1, 1))
+
+    def test_local_image_is_sent_and_confirmed_by_trace_after_unknown_result(self):
+        sync = Synchronizer(self.desktop, self.group, self.state, images=True)
+        sync.step()
+        self.desktop.text = PNG
+        def unknown(snapshot, value, trace):
+            self.group.sent.append((value, trace))
+            raise SendUnknown('synthetic')
+        self.group.send = unknown
+        with self.assertRaises(SendUnknown):
+            sync.step()
+        trace = self.group.sent[0][1]
+        self.assertEqual(self.group.sent[0][0], PNG)
+        # 自己发出的图片回到组里时引用已重新加密，只能按 trace 认领，不再下载或写回。
+        self.group.receive('', version=8, source=10, kind=6, trace=trace)
+        sync.step()
+        self.assertEqual((self.desktop.writes, self.group.downloads, sync.status()['sent']), ([], 0, 1))
+        self.assertNotIn('intent', sync.state)
+
+    def test_oversized_local_image_is_not_sent(self):
+        sync = Synchronizer(self.desktop, self.group, self.state, images=True)
+        sync.step()
+        self.desktop.text = ClipboardImage(PNG.data + b'0' * (10 * 1024 * 1024), 'image/png')
+        sync.step()
+        self.assertEqual(self.group.sent, [])
+
+    def test_invalid_remote_image_advances_cursor_instead_of_retrying(self):
+        sync = Synchronizer(self.desktop, self.group, self.state, images=True)
+        self.group.receive('', kind=6)
+        sync.step()
+        sync.step()
+        self.assertEqual((self.desktop.writes, self.group.downloads), ([], 1))
 
 
 if __name__ == '__main__':

@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import socket
 import struct
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -93,6 +94,33 @@ class DesktopClipboardTest(unittest.TestCase):
             failure.unlink()
             sync.step()
             self.assertEqual(group.sent, [])
+
+    def test_x11_images_require_gtk_reader(self):
+        self.tools.stop()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            script = root / 'xclip'
+            script.write_text(f'#!{sys.executable}\nimport sys\nprint("UTF8_STRING")\n')
+            script.chmod(0o700)
+            env = dict(os.environ, PATH=str(root), DISPLAY=':synthetic')
+            failed = subprocess.CompletedProcess([], 1)
+            with patch('系统剪贴板.subprocess.run', return_value=failed), self.assertRaisesRegex(RuntimeError, 'python3-gi'):
+                DesktopClipboard('x11', env, images=True)
+            with patch('系统剪贴板.subprocess.run', return_value=failed):
+                self.assertEqual(DesktopClipboard('x11', env).backend, 'x11')
+
+    def test_klipper_restored_content_is_not_treated_as_a_new_copy(self):
+        self.tools.stop()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            script = root / 'xclip'
+            script.write_text(f'#!{sys.executable}\nimport sys\n'
+                              'print("UTF8_STRING\\napplication/x-kde-onlyReplaceEmpty\\nimage/png") if "TARGETS" in sys.argv '
+                              'else sys.stdout.write("restored")\n')
+            script.chmod(0o700)
+            env = dict(os.environ, PATH=str(root), DISPLAY=':synthetic')
+            self.assertIsNone(DesktopClipboard('x11', env).read())
+            self.assertIsNone(DesktopClipboard('x11', env, images=True).read())
 
 
 class WaylandProbeTest(unittest.TestCase):
