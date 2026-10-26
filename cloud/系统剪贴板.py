@@ -21,15 +21,36 @@ GTK_READ = (
     'selection = board.wait_for_contents(Gdk.Atom.intern(sys.argv[1], False))\n'
     'data = selection.get_data() if selection is not None else None\n'
     'sys.exit(1) if not data else sys.stdout.buffer.write(data)\n')
+# 收到的 JPEG 另外以 PNG 提供，只认 PNG 的应用（如 Chromium 系）也能粘贴；PNG 在首次被请求时才转换，
+# 按 EXIF 方向摆正，长边超过 2560 时等比缩小（照片的无损 PNG 原尺寸可达几十 MB）。JPEG 保持原图。
 GTK_WRITE = (
     'import os, sys, gi\n'
     'gi.require_version("Gtk", "3.0")\n'
-    'from gi.repository import Gtk, Gdk\n'
-    'kind = Gdk.Atom.intern(sys.argv[1], False)\n'
-    'data = sys.stdin.buffer.read()\n'
+    'gi.require_version("GdkPixbuf", "2.0")\n'
+    'from gi.repository import Gtk, Gdk, GdkPixbuf\n'
+    'kinds = [sys.argv[1]] + (["image/png"] if sys.argv[1] == "image/jpeg" else [])\n'
+    'data = {sys.argv[1]: sys.stdin.buffer.read()}\n'
+    'def content(kind):\n'
+    '    if kind not in data:\n'
+    '        loader = GdkPixbuf.PixbufLoader()\n'
+    '        loader.write(data[kinds[0]]); loader.close()\n'
+    '        image = loader.get_pixbuf().apply_embedded_orientation()\n'
+    '        scale = 2560 / max(image.get_width(), image.get_height())\n'
+    '        if scale < 1:\n'
+    '            image = image.scale_simple(max(1, round(image.get_width() * scale)),\n'
+    '                                       max(1, round(image.get_height() * scale)), GdkPixbuf.InterpType.BILINEAR)\n'
+    '        data[kind] = image.save_to_bufferv("png", ["compression"], ["1"])[1]\n'
+    '    return data[kind]\n'
+    'def provide(_owner, selection, _info, _time):\n'
+    '    target = selection.get_target()\n'
+    '    try:\n'
+    '        selection.set(target, 8, content(target.name()))\n'
+    '    except Exception:\n'
+    '        pass\n'
     'owner = Gtk.Invisible()\n'
-    'Gtk.selection_add_target(owner, Gdk.SELECTION_CLIPBOARD, kind, 0)\n'
-    'owner.connect("selection-get", lambda _w, selection, _i, _t: selection.set(kind, 8, data))\n'
+    'for kind in kinds:\n'
+    '    Gtk.selection_add_target(owner, Gdk.SELECTION_CLIPBOARD, Gdk.Atom.intern(kind, False), 0)\n'
+    'owner.connect("selection-get", provide)\n'
     'owner.connect("selection-clear-event", lambda *_: Gtk.main_quit())\n'
     'Gtk.selection_owner_set(owner, Gdk.SELECTION_CLIPBOARD, Gdk.CURRENT_TIME) or sys.exit(1)\n'
     'sys.stdout.write("ok"); sys.stdout.flush(); os.close(1)\n'
@@ -135,7 +156,7 @@ class DesktopClipboard:
                 raise RuntimeError('缺少剪贴板工具：' + name)
             self.tools[name] = tool
         if images and backend == 'x11':
-            probe = subprocess.run([sys.executable, '-c', GTK_READ.split('board')[0]], env=self.env,
+            probe = subprocess.run([sys.executable, '-c', GTK_WRITE.split('kinds')[0]], env=self.env,
                                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                    timeout=10)
             if probe.returncode != 0:

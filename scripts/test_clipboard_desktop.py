@@ -13,13 +13,26 @@ import struct
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'cloud'))
 sys.path.insert(0, str(ROOT / 'tests'))
-from 系统剪贴板 import DesktopClipboard
+from 系统剪贴板 import GTK_READ, DesktopClipboard
 from 剪贴板同步 import Synchronizer
 from test_clipboard_sync import MemoryGroup
-from 剪贴板协议 import ClipboardImage
+from 剪贴板协议 import ClipboardImage, image_type
 
 PNG = bytes.fromhex('89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de'
                     '0000000c4944415408d763f8cfc000000301010018dd8db00000000049454e44ae426082')
+
+
+def oriented_jpeg(width=4, height=2):
+    """带 EXIF 方向 6（显示时右转 90°）的 JPEG。"""
+    import gi
+    gi.require_version('GdkPixbuf', '2.0')
+    from gi.repository import GdkPixbuf
+    image = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, width, height)
+    image.fill(0x1e90ffff)
+    data = image.save_to_bufferv('jpeg', [], [])[1]
+    tiff = b'MM\x00\x2a\x00\x00\x00\x08\x00\x01' + b'\x01\x12\x00\x03\x00\x00\x00\x01\x00\x06\x00\x00' + b'\x00' * 4
+    exif = b'Exif\x00\x00' + tiff
+    return data[:2] + b'\xff\xe1' + struct.pack('>H', len(exif) + 2) + exif + data[2:]
 
 
 def large_png(size=3 * 1024 * 1024):
@@ -132,6 +145,28 @@ def main():
             read_jpeg = ['xclip', '-selection', 'clipboard', '-out', '-target', 'image/jpeg'] if args.backend == 'x11' else ['wl-paste', '--type', 'image/jpeg']
             assert subprocess.check_output(read_jpeg, env=env) == jpeg.data
             assert len(image_group.sent) == sent
+            if args.backend == 'x11':
+                # X11 上收到的 JPEG 同时以 PNG 提供，并按 EXIF 方向（右转 90°）摆正；不回传。
+                photo = ClipboardImage(oriented_jpeg(), 'image/jpeg')
+                image_group.images[10] = photo
+                image_group.receive('', version=10, kind=6)
+                image_sync.step()
+                image_sync.step()
+                assert subprocess.check_output(read_jpeg, env=env) == photo.data
+                png = subprocess.check_output(['xclip', '-selection', 'clipboard', '-out', '-target', 'image/png'], env=env)
+                assert image_type(png) == 'image/png' and struct.unpack('>II', png[16:24]) == (2, 4), png[:32]
+                image_sync.step()
+                assert len(image_group.sent) == sent
+                # 长边超过 2560 的照片转 PNG 时等比缩小，JPEG 仍是原图。
+                photo = ClipboardImage(oriented_jpeg(1000, 3000), 'image/jpeg')
+                image_group.images[11] = photo
+                image_group.receive('', version=11, kind=6)
+                image_sync.step()
+                image_sync.step()
+                assert subprocess.check_output(read_jpeg, env=env) == photo.data
+                png = subprocess.check_output([sys.executable, '-c', GTK_READ, 'image/png'], env=env)
+                assert image_type(png) == 'image/png' and struct.unpack('>II', png[16:24]) == (2560, 853), png[:32]
+                assert len(image_group.sent) == sent
             # 超过 1 MiB 的图片：写入后不回读，提供方不退出；其他进程重新读取得到完整图片。
             big = ClipboardImage(large_png(), 'image/png')
             pictures.write(big, expected=pictures.read())
